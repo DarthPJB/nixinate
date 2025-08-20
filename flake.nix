@@ -56,6 +56,7 @@
                 echo "Sending flake to ${machine} via nix copy:"
                 ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
               '' + (if hermetic then ''
+
                 echo "Activating configuration hermetically on ${machine} via ssh:"
                 ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy --derivation ${nixos-rebuild} ${flock} --to ssh://${user}@${host} )
                 ( set -x; ${openssh} -p ${port} -t ${user}@${host} "sudo nix-store --realise ${nixos-rebuild} ${flock} && sudo ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine}" )

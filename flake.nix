@@ -6,7 +6,7 @@
   outputs = { self, nixpkgs, ... }@inputs:
     let
       version = builtins.substring 0 8 self.lastModifiedDate;
-      supportedSystems = [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
+      supportedSystems = nixpkgs.lib.systems.flakeExposed;
       forSystems = systems: f:
         nixpkgs.lib.genAttrs systems
         (system: f system nixpkgs.legacyPackages.${system});
@@ -79,6 +79,9 @@
                    (x:
                      {
                        type = "app";
+                       meta = {
+                         description = "Deployment Application for $x";
+                       };
                        program = toString (mkDeployScript {
                          machine = x;
                        });

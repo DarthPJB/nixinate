@@ -14,7 +14,6 @@
       nixpkgsFor = forAllSystems (system: pkgs: import nixpkgs { inherit system; overlays = [ self.overlay ]; });
     in rec
     {
-      herculesCI.ciSystems = [ "x86_64-linux" ];
       overlay = final: prev: {
         nixinate = {
           nix = prev.pkgs.writeShellScriptBin "nix"
@@ -91,18 +90,5 @@
           };
         };
       nixinate = forAllSystems (system: pkgs: nixpkgsFor.${system}.generateApps);
-      checks = forAllSystems (system: pkgs:
-        let
-          vmTests = import ./tests {
-            makeTest = (import (nixpkgs + "/nixos/lib/testing-python.nix") { inherit system; }).makeTest;
-            inherit inputs; pkgs = nixpkgsFor.${system};
-          };
-        in
-        pkgs.lib.optionalAttrs pkgs.stdenv.isLinux vmTests # vmTests can only be ran on Linux, so append them only if on Linux.
-        //
-        {
-          # Other checks here...
-        }
-      );
     };
 }

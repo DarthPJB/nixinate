@@ -46,10 +46,10 @@
               header = ''
                   set -e
                   sw=''${1:-test}
-                  echo "Deploying nixosConfigurations.${machine} from ${flake} | ${lolcat}"
-                  echo "SSH Target: ${user}@${host}"
-                  echo "SSH Port: ${port}"
-                  echo "Rebuild Command: $sw"
+                  echo "Deploying nixosConfigurations.${machine} from ${flake}" | ${lolcat}
+                  echo "SSH Target: ${user}@${host}" | ${lolcat}
+                  echo "SSH Port: ${port}" | ${lolcat} 
+                  echo "Rebuild Command: $sw" | ${lolcat}
                 '';
 
                 remoteCopy = if remote then ''

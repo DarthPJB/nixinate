@@ -5,7 +5,7 @@
   };
   outputs = { self, nixpkgs, ... }@inputs:
     let
-      version = builtins.substring 1 0 self.lastModifiedDate;
+      version = builtins.substring 0 8 self.lastModifiedDate;
       supportedSystems = nixpkgs.lib.systems.flakeExposed;
       forSystems = systems: f:
         nixpkgs.lib.genAttrs systems
@@ -43,33 +43,36 @@
               substituteOnTarget = n.substituteOnTarget or false;
               nixOptions = concatStringsSep " " (n.nixOptions or []);
 
-              script =
-              ''
-                set -e
-                sw=''${1:-test}
-                echo "Deploying nixosConfigurations.${machine} from ${flake}"
-                echo "SSH User: ${user}"
-                echo "SSH Host: ${host}"
-                echo "SSH Port: ${port}"
-                echo "Rebuild Command: $sw"
-              '' + (if remote then ''
-                echo "Sending flake to ${machine} via nix copy:"
-                ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
-              '' + (if hermetic then ''
+              header = ''
+                  set -e
+                  sw=''${1:-test}
+                  echo "Deploying nixosConfigurations.${machine} from ${flake}"
+                  echo "SSH Target: ${user}@${host}"
+                  echo "SSH Port: ${port}"
+                  echo "Rebuild Command: $sw"
+                '';
 
-                echo "Activating configuration hermetically on ${machine} via ssh:"
-                ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy --derivation ${nixos-rebuild} ${flock} --to ssh://${user}@${host} )
-                ( set -x; ${openssh} -p ${port} -t ${user}@${host} "sudo nix-store --realise ${nixos-rebuild} ${flock} && sudo ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine}" )
-              '' else ''
-                echo "Activating configuration non-hermetically on ${machine} via ssh:"
-                ( set -x; ${openssh} -p ${port} -t ${user}@${host} "sudo flock -w 60 /dev/shm/nixinate-${machine} nixos-rebuild $sw --flake ${flake}#${machine}" )
-              '')
-              else ''
-                echo "Building system closure locally, copying it to remote store and activating it:"
-                ( set -x; NIX_SSHOPTS="-t -p ${port}" ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine} --target-host ${user}@${host} --use-remote-sudo ${optionalString substituteOnTarget "-s"} )
+                remoteCopy = if remote then ''
+                  echo "Sending flake to ${machine} via nix copy:"
+                  ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
+                '' else "";
 
-              '');
-            in final.writeShellScript "deploy-${machine}.sh" script;
+                hermeticActivation = if hermetic then ''
+                  echo "Activating configuration hermetically on ${machine} via ssh:"
+                              ( set -x; NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy --derivation ${nixos-rebuild} ${flock} --to ssh://${user}@${host} )
+                              ( set -x; ${openssh} -p ${port} -t ${user}@${host} "sudo nix-store --realise ${nixos-rebuild} ${flock} && sudo ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine}" )
+                '' else ''
+                  echo "Activating configuration non-hermetically on ${machine} via ssh:"
+                  ( set -x; ${openssh} -p ${port} -t ${user}@${host} "sudo flock -w 60 /dev/shm/nixinate-${machine} nixos-rebuild $sw --flake ${flake}#${machine}" )
+                '';
+
+                activation = if remote then remoteCopy + hermeticActivation else ''
+                  echo "Building system closure locally, copying it to remote store and activating it:"
+                  ( set -x; NIX_SSHOPTS="-t -p ${port}" ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine} --target-host ${user}@${host} --use-remote-sudo ${optionalString substituteOnTarget "-s"} )             
+                '';
+
+                script = header + activation;
+            in final.writeShellScriptBin "deploy-${machine}.sh" script;
           in
           nixpkgs.lib.genAttrs
             validMachines (x:
@@ -78,7 +81,7 @@
                 meta = {
                   description = "Deployment Application for $x";
                 };
-                program = toString (mkDeployScript { machine = x; });
+                program = nixpkgs.lib.getExe (mkDeployScript { machine = x; });
               });
         };
     };

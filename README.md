@@ -11,20 +11,20 @@ To use `nixinate` in your own deployment, you will need to:
 2. Use the `lib.genDeploy` function to generate your deployment commands and add them to apps.
 3. Add and configure `_module.args.nixinate` to the `nixosConfigurations` you want to deploy
 
-Below is a simple example:
+Below is a documented example:
 
 ```nix
 {
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0";
-    nixinate.url = "github:DarthPJB/nixinate";
+    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0"; # the nixpkgs source see below
+    nixinate = { url = "github:DarthPJB/nixinate"; nixpkgs.follows = "nixpkgs"; } # import nixinate, using your own nixpkgs and nix-versions (useful for hermetic).
   };
 
   outputs = { self, nixpkgs, nixinate }: {
-    apps = nixinate.lib.genDeploy.x86_64-linux self;
+    apps = nixinate.lib.genDeploy.x86_64-linux self;  # the lib lib.genDeploy function provides the 'apps' attribute set, you can always amend this onto your own apps
     nixosConfigurations = {
       myMachine = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
+        system = "x86_64-linux";  # this will work for other systems too ;)
         modules = [
           ./my-configuration.nix
           {
@@ -45,9 +45,22 @@ Below is a simple example:
 }
 ```
 
-Each `nixosConfiguration` you have configured will have a deployment script created in
-`apps`, visible in `nix flake show`.
-To finally execute the deployment script, use `nix run .#myMachine`
+Each `nixosConfiguration` you have configured will have a deployment script created in your flake.
+
+## deployment
+To deploy the machine, use `nix run .#myMachine`, you can easily see what machines are in your flake with `nix flake show`.
+** DEPLOYING ONLY WITH NIX RUN WILL NOT PERSIST PAST A REBOOT **
+often, we might make a deployment that despite our best testing causes the machine to be in a broken state; if the machine is remote this 
+may be hard to rectify (such as using KVM or console). To ensure best practice, the default behaviour of this script is to use
+`nixos-rebuild test`; you can read more about this in the [various documentation](https://wiki.nixos.org/wiki/Nixos-rebuild)
+
+The long and short of this is that a deployment made will **not be added to the bootloader** meaning in the event you break SSHD or alike
+you can simply reset the system to restore the previous configuration.
+
+should you want to `nixos-rebuild switch` the remote system, use the following command.
+`nix run .#myMachine -- switch`
+
+as you might be able to tell, you can pass any nixos-rebuild compatible argument in the invocation.
 
 ### Using other app outputs with nixinate.
 

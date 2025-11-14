@@ -5,19 +5,20 @@
   };
   outputs = { self, nixpkgs, ... }@inputs:
     let
-      version = builtins.substring 0 8 self.lastModifiedDate;
+      version = builtins.substring 1 0 self.lastModifiedDate;
       supportedSystems = nixpkgs.lib.systems.flakeExposed;
       forSystems = systems: f:
         nixpkgs.lib.genAttrs systems
         (system: f system nixpkgs.legacyPackages.${system});
       forAllSystems = forSystems supportedSystems;
-      nixpkgsFor = forAllSystems (system: pkgs: import nixpkgs { inherit system; overlays = [ self.overlay ]; });
+      nixpkgsFor = forAllSystems (system: pkgs: import nixpkgs { inherit system; overlays = [ self.overlays.default ]; });
     in rec
     {
-      overlay = final: prev: {
+      lib.genDeploy = forAllSystems (system: pkgs: nixpkgsFor.${system}.generateApps);
+      overlays.default = final: prev: {
         nixinate = {
           nix = prev.pkgs.writeShellScriptBin "nix"
-            ''${final.nixVersions.unstable}/bin/nix --experimental-features "nix-command flakes" "$@"'';
+            ''${final.nixVersions.latest}/bin/nix --experimental-features "nix-command flakes" "$@"'';
           nixos-rebuild = prev.nixos-rebuild.override { inherit (final) nix; };
         };
         generateApps = flake:
@@ -70,25 +71,15 @@
               '');
             in final.writeShellScript "deploy-${machine}.sh" script;
           in
-          {
-             nixinate =
-               (
-                 nixpkgs.lib.genAttrs
-                   validMachines
-                   (x:
-                     {
-                       type = "app";
-                       meta = {
-                         description = "Deployment Application for $x";
-                       };
-                       program = toString (mkDeployScript {
-                         machine = x;
-                       });
-                     }
-                   )
-               );
-          };
+          nixpkgs.lib.genAttrs
+            validMachines (x:
+            {
+                type = "app";
+                meta = {
+                  description = "Deployment Application for $x";
+                };
+                program = toString (mkDeployScript { machine = x; });
+              });
         };
-      nixinate = forAllSystems (system: pkgs: nixpkgsFor.${system}.generateApps);
     };
 }

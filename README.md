@@ -17,7 +17,7 @@ Below is a documented example:
 {
   inputs = {
     nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0"; # the nixpkgs source see below
-    nixinate = { url = "github:DarthPJB/nixinate"; nixpkgs.follows = "nixpkgs"; } # import nixinate, using your own nixpkgs and nix-versions (useful for hermetic).
+    nixinate = { url = "github:DarthPJB/nixinate"; inputs.nixpkgs.follows = "nixpkgs"; } # import nixinate, using your own nixpkgs and nix-versions (useful for hermetic).
   };
 
   outputs = { self, nixpkgs, nixinate }: {

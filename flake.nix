@@ -32,7 +32,7 @@
               nixos-rebuild = "${getExe final.nixos-rebuild}";
               openssh = "${getExe final.openssh}";
               flock = "${final.flock}/bin/flock";
-
+              lolcat = "${getExe final.lolcat} -a -p 0.1";
               n = flake.nixosConfigurations.${machine}._module.args.nixinate;
               hermetic = n.hermetic or true;
               user = if (n ? sshUser && n.sshUser != null) then n.sshUser else throw "sshUser must be set in _module.args.nixinate";
@@ -46,7 +46,7 @@
               header = ''
                   set -e
                   sw=''${1:-test}
-                  echo "Deploying nixosConfigurations.${machine} from ${flake}"
+                  echo "Deploying nixosConfigurations.${machine} from ${flake} | ${lolcat}"
                   echo "SSH Target: ${user}@${host}"
                   echo "SSH Port: ${port}"
                   echo "Rebuild Command: $sw"

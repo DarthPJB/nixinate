@@ -3,14 +3,16 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
-  outputs = { self, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, ... }:
     let
+      # some basic carte-blance tooling to handle valid archtectures.
       version = builtins.substring 0 8 self.lastModifiedDate;
-      supportedSystems = nixpkgs.lib.systems.flakeExposed;
+      # this is still better than flake-utils, long game wins.
       forSystems = systems: f:
         nixpkgs.lib.genAttrs systems
         (system: f system nixpkgs.legacyPackages.${system});
-      forAllSystems = forSystems supportedSystems;
+      #  If you need to shim in your alien-nixpkgs-overlays override flakeExposed in the input nixpkgs follows packageset; not here. 
+      forAllSystems = forSystems nixpkgs.lib.systems.flakeExposed;
       nixpkgsFor = forAllSystems (system: pkgs: import nixpkgs { inherit system; overlays = [ self.overlays.default ]; });
     in rec
     {
@@ -18,7 +20,7 @@
       overlays.default = final: prev: {
         nixinate = {
           nix = prev.pkgs.writeShellScriptBin "nix"
-            ''${final.nixVersions.latest}/bin/nix --experimental-features "nix-command flakes" "$@"'';
+            ''${final.nixVersions.latest}/bin/nix --experimental-features "nix-command flakes" "$@"''; #TODO: appropriately allow passing of nix-version per-machine
           nixos-rebuild = prev.nixos-rebuild.override { inherit (final) nix; };
         };
         generateApps = flake:
@@ -26,55 +28,61 @@
             machines = builtins.attrNames flake.nixosConfigurations;
             validMachines = final.lib.remove "" (final.lib.forEach machines (x: final.lib.optionalString (flake.nixosConfigurations."${x}"._module.args ? nixinate) "${x}" ));
             mkDeployScript = { machine }: let
-              inherit (builtins) abort;
-              inherit (final.lib) getExe optionalString concatStringsSep;
+              inherit (final.lib) getExe getExe' optionalString concatStringsSep;
               nix = "${getExe final.nix}";
               nixos-rebuild = "${getExe final.nixos-rebuild}";
               openssh = "${getExe final.openssh}";
-              flock = "${final.flock}/bin/flock";
-              lolcat = "${getExe final.lolcat} -p 3 -F 0.02";
-              figlet = "${getExe final.figlet}";
-              n = flake.nixosConfigurations.${machine}._module.args.nixinate;
-              hermetic = n.hermetic or true;
-              user = if (n ? sshUser && n.sshUser != null) then n.sshUser else throw "sshUser must be set in _module.args.nixinate";
-              host = n.host;
-              debug = if (n ? debug && n.debug) then "set -x;" else "";
-              port = toString (n.port or 22);
-              where = n.buildOn or "local";
-              remote = if where == "remote" then true else if where == "local" then false else abort "_module.args.nixinate.buildOn is not either 'local' or 'remote'";
-              substituteOnTarget = n.substituteOnTarget or false;
-              nixOptions = concatStringsSep " " (n.nixOptions or []);
+              lolcat_cmd = "${getExe final.lolcat} -p 3 -F 0.02";
+              sem = "${getExe' final.parallel "sem"} --will-cite --line-buffer";
+              parameters = flake.nixosConfigurations.${machine}._module.args.nixinate;
+              hermetic = parameters.hermetic or true;
+              user = if (parameters ? sshUser && parameters.sshUser != null) then parameters.sshUser else (builtins.abort "sshUser must be set in _module.args.nixinate");
+              host = parameters.host;
+              debug = if (parameters ? debug && parameters.debug) then "set -x;" else "";
+              port = toString (parameters.port or 22);
+              where = parameters.buildOn or "local";
+              target = "${flake}#${machine}";
+              target_host = "${user}@${host}";
+              ssh_options = "NIX_SSHOPTS=\"-p ${port}\"";
+              remote = if where == "remote" then true else if where == "local" then false else builtins.abort "_module.args.nixinate.buildOn is not either 'local' or 'remote'";
+              substituteOnTarget = parameters.substituteOnTarget or false;
+              nixOptions = concatStringsSep " " (parameters.nixOptions or []);
               header = ''
                   set -e
                   sw=''${1:-test}
-                  echo "Deploying nixosConfigurations.${machine} from ${flake}" | ${lolcat}
-                  echo "SSH Target: ${user}@${host}" | ${lolcat}
-                  echo "SSH Port: ${port}" | ${lolcat} 
+                  echo "Deploying nixosConfigurations.${machine} from ${flake}" | ${lolcat_cmd}
+                  echo "SSH Target: ${user}@${host}" | ${lolcat_cmd}
+                  echo "SSH Port: ${port}" | ${lolcat_cmd} 
                   echo "Rebuild Command:"
-                  echo "$sw" | ${figlet} | ${lolcat}
+                  echo "${where} build : mode $sw  ${if hermetic then "hermetic active" else ""}" | figlet | ${lolcat_cmd}
                 '';
 
                 remoteCopy = if remote then ''
                   echo "Sending flake to ${machine} via nix copy:"
-                  ( ${debug} NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
+                  ( ${debug} ${ssh_options} ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
                 '' else "";
 
                 hermeticActivation = if hermetic then ''
                   echo "Activating configuration hermetically on ${machine} via ssh:"
-                              ( ${debug} NIX_SSHOPTS="-p ${port}" ${nix} ${nixOptions} copy --derivation ${nixos-rebuild} ${flock} --to ssh://${user}@${host} )
-                              ( ${debug} ${openssh} -p ${port} -t ${user}@${host} "sudo nix-store --realise ${nixos-rebuild} ${flock} && sudo ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine}" )
+                    ( ${debug} ${ssh_options} nix ${nixOptions} copy --derivation ${nixos-rebuild} --derivation ${final.parallel} --to ssh://${user}@${host} )
+                    ( ${debug} ${openssh} -p ${port} -t ${user}@${host} sudo nix-store --realise ${final.parallel} --realise ${nixos-rebuild} && sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${nixos-rebuild} ${nixOptions} \"$sw\" --flake ${flake}#${machine}" )
                 '' else ''
                   echo "Activating configuration non-hermetically on ${machine} via ssh:"
-                  ( ${debug} ${openssh} -p ${port} -t ${user}@${host} "sudo flock -w 60 /dev/shm/nixinate-${machine} nixos-rebuild $sw --flake ${flake}#${machine}" )
+                    ( ${debug} ${openssh} -p ${port} -t ${user}@${host} sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${nixos-rebuild} \"$sw\" --flake ${flake}#${machine}" )
                 '';
 
                 activation = if remote then remoteCopy + hermeticActivation else ''
                   echo "Building system closure locally, copying it to remote store and activating it:"
-                  ( ${debug} NIX_SSHOPTS="-t -p ${port}" ${flock} -w 60 /dev/shm/nixinate-${machine} ${nixos-rebuild} ${nixOptions} $sw --flake ${flake}#${machine} --target-host ${user}@${host} --use-remote-sudo ${optionalString substituteOnTarget "-s"} )             
+                    ( ${debug} ${ssh_options} ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "nixos-rebuild ${nixOptions} \"$sw\" --flake ${target} --target-host ${target_host} --sudo ${optionalString substituteOnTarget "-s"}" )             
                 '';
-
-                script = header + activation;
-            in final.writeShellScriptBin "deploy-${machine}.sh" script;
+            in 
+	    	final.writeShellApplication 
+	    	{
+	    		name = "deploy-${machine}.sh"; 
+	    		meta.description = "nixinate deploy script for ${machine}";
+          text = header + activation;
+          runtimeInputs = with final; [  ];
+	    	};
           in
           nixpkgs.lib.genAttrs
             validMachines (x:

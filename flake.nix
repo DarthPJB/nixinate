@@ -31,7 +31,7 @@
               inherit (final.lib) getExe getExe' optionalString concatStringsSep;
               nix = "${getExe final.nix}";
               nixos-rebuild = "${getExe final.nixos-rebuild}";
-              openssh = "${getExe final.openssh}";
+              openssh = "${getExe final.openssh} -p ${port} -t ${target_host}";
               lolcat_cmd = "${getExe final.lolcat} -p 3 -F 0.02";
               sem = "${getExe' final.parallel "sem"} --will-cite --line-buffer";
               parameters = flake.nixosConfigurations.${machine}._module.args.nixinate;
@@ -52,23 +52,23 @@
                   sw=''${1:-test}
                   echo "Deploying nixosConfigurations.${machine} from ${flake}" | ${lolcat_cmd}
                   echo "SSH Target: ${user}@${host}" | ${lolcat_cmd}
-                  echo "SSH Port: ${port}" | ${lolcat_cmd} 
+                  echo ${if port != 22 then "SSH Port: ${port}" else ""} | ${lolcat_cmd} 
                   echo "Rebuild Command:"
                   echo "${where} build : mode $sw  ${if hermetic then "hermetic active" else ""}" | figlet | ${lolcat_cmd}
                 '';
 
                 remoteCopy = if remote then ''
                   echo "Sending flake to ${machine} via nix copy:"
-                  ( ${debug} ${ssh_options} ${nix} ${nixOptions} copy ${flake} --to ssh://${user}@${host} )
+                  ( ${debug} ${ssh_options} ${nix} ${nixOptions} copy ${flake} --to ssh://${target_host} )
                 '' else "";
 
                 hermeticActivation = if hermetic then ''
                   echo "Activating configuration hermetically on ${machine} via ssh:"
-                    ( ${debug} ${ssh_options} nix ${nixOptions} copy --derivation ${nixos-rebuild} --derivation ${final.parallel} --to ssh://${user}@${host} )
-                    ( ${debug} ${openssh} -p ${port} -t ${user}@${host} sudo nix-store --realise ${final.parallel} --realise ${nixos-rebuild} && sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${nixos-rebuild} ${nixOptions} \"$sw\" --flake ${flake}#${machine}" )
+                    ( ${debug} ${ssh_options} nix ${nixOptions} copy --derivation ${nixos-rebuild} --derivation ${final.parallel} --to ssh://${target_host} )
+                    ( ${debug} ${openssh} "sudo nix-store --realise ${nixos-rebuild} --realise ${getExe' final.parallel "sem"} && sudo ${sem} --id \"nixinate-${machine}\" --semaphore-timeout 60 --fg \"${nixos-rebuild} ${nixOptions} $sw --flake ${target}\"" ) #TODO: this does not work cross-archtectures
                 '' else ''
                   echo "Activating configuration non-hermetically on ${machine} via ssh:"
-                    ( ${debug} ${openssh} -p ${port} -t ${user}@${host} sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${nixos-rebuild} \"$sw\" --flake ${flake}#${machine}" )
+                    ( ${openssh} "sudo ${sem} --id \"nixinate-${machine}\" --semaphore-timeout 60 --fg \"nixos-rebuild $sw --flake ${target}\"" )
                 '';
 
                 activation = if remote then remoteCopy + hermeticActivation else ''

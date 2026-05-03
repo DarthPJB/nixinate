@@ -62,8 +62,8 @@
               safe_ssh_uri = escapeShellArg ssh_uri;
               logFile = "/tmp/deploy-${machine}.log";
               ssh_options = "NIX_SSHOPTS=\"-p ${port}\"";
-              hermeticOpensshCmd = ''sudo nix-store --realise ${safe_nixos_rebuild} --realise ${safe_parallel} && sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${buildersOption} ${nixOptions} $sw --flake ${safe_target}"'';
-              nonHermeticOpensshCmd = ''sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${buildersOption} ${nixOptions} $sw --flake ${safe_target}"'';
+              hermeticOpensshCmd = ''sudo nix-store --realise ${safe_nixos_rebuild} --realise ${safe_parallel} && sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${nixOptions} $sw --flake ${safe_target}"'';
+              nonHermeticOpensshCmd = ''sudo ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${nixOptions} $sw --flake ${safe_target}"'';
               remote = if where == "remote" then true else if where == "local" then false else builtins.abort "_module.args.nixinate.buildOn is not either 'local' or 'remote'";
               substituteOnTarget = parameters.substituteOnTarget or false;
               nixOptions = concatStringsSep " " nixOptionsList;
@@ -94,7 +94,7 @@
 
                  activation = if remote then remoteCopy + hermeticActivation else ''
                    echo "Building system closure locally, copying it to remote store and activating it:"
-                     ( ${debug} ${ssh_options} ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${buildersOption} ${nixOptions} \"$sw\" --flake ${safe_target} --target-host ${safe_target_host} --sudo ${optionalString substituteOnTarget "-s"}" )
+                     ( ${debug} ${ssh_options} ${sem} --id "nixinate-${machine}" --semaphore-timeout 60 --fg "${safe_nixos_rebuild} ${nixOptions} \"$sw\" --flake ${safe_target} --target-host ${safe_target_host} --sudo ${optionalString substituteOnTarget "-s"}" )
                  '';
             in 
 	    	final.writeShellApplication 

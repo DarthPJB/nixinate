@@ -44,7 +44,7 @@
               safe_parallel = escapeShellArg "${getExe' final.parallel "sem"}";
               buildersOption = "--option builders ''";
               parameters = flake.nixosConfigurations.${machine}._module.args.nixinate;
-              targetSystem = flake.nixosConfigurations.${machine}.config.nixpkgs.system;
+              targetSystem = flake.nixosConfigurations.${machine}.config.nixpkgs.hostPlatform.system;
               deployerSystem = final.system;
               isCrossArch = deployerSystem != targetSystem;
               hermetic = if isCrossArch then false else (parameters.hermetic or true);

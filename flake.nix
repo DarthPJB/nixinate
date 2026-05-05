@@ -102,10 +102,14 @@
 	    		name = "deploy-${machine}.sh"; 
 	    		meta.description = "nixinate deploy script for ${machine}";
           text = ''exec > >(tee ${logFile}) 2>&1
-
+# Override TMPDIR to keep SSH control socket paths under the 108-byte
+# Unix domain socket limit. nixos-rebuild-ng creates its temp directory
+# at import time based on TMPDIR, and nested nix-shell temp paths
+# produce socket paths that exceed the limit.
+export TMPDIR="/tmp"
 '' + header + activation;
           runtimeInputs = with final; [ figlet lolcat coreutils ];
-	    	};
+	     	};
           in
           nixpkgs.lib.genAttrs
             validMachines (x:
